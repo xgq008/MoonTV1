@@ -5,6 +5,40 @@ import { yellowWords } from '@/lib/yellow';
 
 export const runtime = 'edge';
 
+// 全局配置缓存，减少冷启动时间
+let cachedConfig: Awaited<ReturnType<typeof getConfig>> | null = null;
+let configLastFetched = 0;
+const CONFIG_CACHE_TTL = 5 * 60 * 1000; // 5分钟缓存
+
+// 缓存时间缓存
+let cachedCacheTime: number | null = null;
+let cacheTimeLastFetched = 0;
+const CACHE_TIME_TTL = 1 * 60 * 1000; // 1分钟缓存
+
+// 获取配置（带缓存）
+async function getCachedConfig() {
+  const now = Date.now();
+  if (cachedConfig && now - configLastFetched < CONFIG_CACHE_TTL) {
+    return cachedConfig;
+  }
+  
+  cachedConfig = await getConfig();
+  configLastFetched = now;
+  return cachedConfig;
+}
+
+// 获取缓存时间（带缓存）
+async function getCachedCacheTime() {
+  const now = Date.now();
+  if (cachedCacheTime !== null && now - cacheTimeLastFetched < CACHE_TIME_TTL) {
+    return cachedCacheTime;
+  }
+  
+  cachedCacheTime = await getCacheTime();
+  cacheTimeLastFetched = now;
+  return cachedCacheTime;
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('q');
@@ -13,7 +47,7 @@ export async function GET(request: Request) {
   const timeoutParam = searchParams.get('timeout');
   const timeout = timeoutParam ? parseInt(timeoutParam, 10) * 1000 : undefined; // 转换为毫秒
 
-  const config = await getConfig();
+  const config = await getCachedConfig();
   
   // 获取选中的搜索源
   const selectedSourcesParam = searchParams.get('sources');
@@ -126,7 +160,7 @@ export async function GET(request: Request) {
         },
       });
     } else {
-      const cacheTime = await getCacheTime();
+      const cacheTime = await getCachedCacheTime();
       return new Response(JSON.stringify({ aggregatedResults, failedSources }), {
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
@@ -209,7 +243,7 @@ export async function GET(request: Request) {
     }
   })();
 
-  const cacheTime = await getCacheTime();
+  const cacheTime = await getCachedCacheTime();
   return new Response(readable, {
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
